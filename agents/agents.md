@@ -85,7 +85,7 @@ There is exactly one `AppState` instance, registered with `.manage()` at startup
 
 ### AppSettings vs KeiConfig
 
-`KeiConfig` maps directly to kei's `config.toml` and is read/written by the kei binary itself. `AppSettings` is a separate file (`~/.config/photoharbor/settings.toml`) that holds UI preferences such as `use_system_kei`, `all_albums`, and legacy folder-template fallbacks. kei v0.20 keeps durable sync settings in TOML: folder templates live under `[download]`, album/smart-folder/library selectors live under `[filters]`, media filtering is `[filters].media`, retry limits are `[download.retry].per_asset`, and EXIF metadata toggles live under `[metadata]`. `start_sync` should only pass one-run flags that still exist in `kei sync --help` such as `--friendly`, `--recent`, `--dry-run`, or `--retry-failed`.
+`KeiConfig` maps directly to kei's `config.toml` and is read/written by the kei binary itself. `AppSettings` is a separate file (`~/.config/photoharbor/settings.toml`) that holds UI preferences such as `use_system_kei`, `all_albums`, and legacy folder-template fallbacks. kei v0.20+ keeps durable sync settings in TOML: folder templates live under `[download]`, album/smart-folder/library selectors live under `[filters]`, media filtering is `[filters].media`, count-form recent scope is `[filters].recent_scope`, retry limits are `[download.retry].per_asset`, and EXIF metadata toggles live under `[metadata]`. `start_sync` should only pass one-run flags that still exist in `kei sync --help` such as `--friendly`, `--recent`, `--dry-run`, or `--retry-failed`.
 
 ### Tauri events emitted from Rust → JS
 
@@ -119,9 +119,13 @@ The kei binary is bundled using Tauri's `externalBin` mechanism. Before building
 npm run prepare-sidecar
 ```
 
-This downloads the pinned kei release (from `src-tauri/binaries/.kei-version`) to `src-tauri/binaries/kei-<target-triple>[.exe]`. The binaries themselves are gitignored; the version file is committed. Pass `--force` to fetch latest and update the pin. If the pin file is newer than an existing sidecar, the script re-downloads that sidecar.
+This downloads the pinned kei release (from `src-tauri/binaries/.kei-version`) to `src-tauri/binaries/kei-<target-triple>[.exe]`. The binaries themselves are gitignored and must be regenerated from the pin rather than committed; the version file is committed. Pass `--force` to fetch latest and update the pin. If the pin file is newer than an existing sidecar, the script re-downloads that sidecar.
 
-To update kei: `node scripts/prepare-sidecar.js --force`, then commit `.kei-version`.
+To update kei: `node scripts/prepare-sidecar.js --force`, then commit `.kei-version` plus any wrapper code/docs needed for the new release.
+
+Kei `v0.21.0` changes count-form recent defaults: `recent = 100` now means one library-wide recent window before filters. PhotoHarbor adopts that default by omitting `[filters].recent_scope` for "Global"; selecting "Per filter" writes `recent_scope = "per-filter"` to keep the old per-album/per-smart-folder/unfiled window shape.
+
+Kei `v0.21.0` also emits `full_enumeration_reason` in logs, `sync_report.json`, notifications, and metrics. PhotoHarbor surfaces that tracing field in the progress card and does not parse `sync_report.json`.
 
 `resolve_kei_bin()` in `main.rs` resolves the binary in this order:
 1. Sidecar alongside the current executable (`current_exe().parent()/kei[.exe]`)
@@ -189,7 +193,7 @@ KeiConfig {
     auth:     Option<AuthConfig>,      // username, domain
     download: Option<DownloadConfig>,  // directory, threads, folder structures, retry
     metadata: Option<MetadataConfig>,  // EXIF/XMP metadata toggles
-    filters:  Option<FiltersConfig>,   // libraries, albums, smart_folders, unfiled, media, recent
+    filters:  Option<FiltersConfig>,   // libraries, albums, smart_folders, unfiled, media, recent, recent_scope
     watch:    Option<WatchConfig>,     // interval
 }
 ```
@@ -203,6 +207,7 @@ All fields are `Option` so that unset fields are omitted from the TOML output (k
 - Each view has a load function (`loadDashboard`/sync refresh, `loadBrowse`, `loadHistory`, `loadSettings`) called when the view is shown.
 - The Browse view is rooted to the configured download directory. `browse_photos` returns only one folder level at a time and only uses already-cached thumbnails so navigation does not block on thumbnail generation.
 - Thumbnail rendering is shared between recently synced assets and Browse. Keep Live Photo pairing, video hover playback, lightbox arrow keys, and open-containing-folder behavior consistent between both surfaces.
+- When a settings or wizard save can sync both primary and Shared Photo Libraries, PhotoHarbor automatically prefixes folder templates with `{library}` if missing. Unchecking the Shared Library Photos pseudo-album removes the automatic `{library}` segment from the folder controls. Shared-only scopes are left unchanged.
 - The sync log uses the parser registry in `src/log-parsers.js` — add new parsers there, not in `app.js`.
 - kei `--friendly` progress output is parsed into the progress card and final statistics. Preserve raw logs while improving progress UI.
 - CSS variables are defined on `:root` for light mode and overridden in `@media (prefers-color-scheme: dark)`.

@@ -993,6 +993,33 @@ function numericField(parsed, names = []) {
   return Number.parseInt(value, 10);
 }
 
+function textField(parsed, names = []) {
+  if (!parsed.fields) return null;
+  const field = parsed.fields.find(({ key }) => names.includes(key.toLowerCase()));
+  return field?.value ?? null;
+}
+
+function fullEnumerationReasonLabel(reason) {
+  const labels = {
+    config_drift: "config changed",
+    explicit_full_sync: "full sync requested",
+    full_sync_requested: "full sync requested",
+    invalid_sync_token: "invalid sync token",
+    metadata_backfill: "metadata backfill",
+    missing_sync_token: "missing sync token",
+    missing_or_invalid_sync_token: "missing or invalid sync token",
+    missing_or_invalid_sync_tokens: "missing or invalid sync token",
+    no_sync_token: "missing sync token",
+    requested_full_sync: "full sync requested",
+    retry_failed_mode: "retry-failed mode",
+    retry_or_pending_rows: "retry or pending rows",
+    retry_pending_rows: "retry or pending rows",
+  };
+  const key = String(reason || "").trim().toLowerCase();
+  if (!key) return null;
+  return labels[key] ?? key.replace(/[-_]+/g, " ");
+}
+
 function setProgressPatch(patch) {
   if (!syncProgress) resetSyncProgress();
   syncProgress = { ...syncProgress, ...patch };
@@ -1232,6 +1259,14 @@ function updateSyncProgressFromLine(raw) {
 
   const parsed = parseLine(raw);
   const msg = parsed.message ?? parsed.text ?? clean;
+  const fullEnumerationReason = fullEnumerationReasonLabel(textField(parsed, ["full_enumeration_reason"]));
+  if (fullEnumerationReason) {
+    setProgressPatch({
+      title: "Scanning iCloud",
+      detail: `Full scan: ${fullEnumerationReason}`,
+    });
+    return;
+  }
 
   const summary = clean.match(/^sync results:\s+(\d+)\s+downloaded,\s+(\d+)\s+failed,\s+(\d+)\s+total/i);
   if (summary) {
@@ -1602,7 +1637,6 @@ const excludeAlbumsTextInput = document.getElementById("cfg-exclude-albums");
 const smartFoldersList = document.getElementById("cfg-smart-folders-list");
 const smartFoldersTextInput = document.getElementById("cfg-smart-folders");
 const sharedLibraryPseudoInput = document.getElementById("cfg-shared-library-pseudo");
-const sharedLibraryWarning = document.getElementById("cfg-shared-library-warning");
 const SHARED_LIBRARY_PSEUDO_ALBUM = "__photoharbor_shared_libraries__";
 
 function _readChecklist(listEl, textEl) {
@@ -1666,8 +1700,38 @@ function customLibrarySelectorsForUi(libraries = []) {
   return managed ? [] : values;
 }
 
-function folderTemplatesUseLibraryToken(...templates) {
-  return templates.some((template) => String(template || "").includes("{library}"));
+function libraryScopedTemplate(template) {
+  const value = String(template ?? "").trim();
+  if (value.includes("{library}")) return value;
+  return value ? `{library}/${value}` : "{library}";
+}
+
+function libraryUnscopedTemplate(template) {
+  return String(template ?? "")
+    .trim()
+    .replace(/(^|[\\/])\{library\}([\\/]|$)/g, (match, before, after) => {
+      if (before && after) return before;
+      return "";
+    })
+    .replace(/[\\/]{2,}/g, "/")
+    .replace(/^[\\/]+|[\\/]+$/g, "");
+}
+
+function setTemplateControlValue(selectId, inputId, rowId, value) {
+  const select = document.getElementById(selectId);
+  const input = document.getElementById(inputId);
+  const row = document.getElementById(rowId);
+  const knownOptions = Array.from(select.options)
+    .map((option) => option.value)
+    .filter((optionValue) => optionValue !== "__custom__");
+  if (knownOptions.includes(value)) {
+    select.value = value;
+    row.classList.add("hidden");
+  } else {
+    select.value = "__custom__";
+    input.value = value;
+    row.classList.remove("hidden");
+  }
 }
 
 function currentFolderTemplateValues() {
@@ -1686,16 +1750,68 @@ function currentFolderTemplateValues() {
   return [folderStructureBase, albumFolderStructure, smartFolderStructure];
 }
 
-function updateSharedLibraryWarning() {
-  if (!sharedLibraryWarning) return;
+function selectedLibrariesForSettings() {
   const customLibraries = parseAlbums(document.getElementById("cfg-libraries").value) ?? [];
   const sharedAlbumsSelected = !sharedAlbumsRow.classList.contains("hidden") && getSelectedSharedAlbums().length > 0;
+  const albumsAll = document.getElementById("cfg-albums-all").checked;
+  const primaryContentSelected =
+    albumsAll ||
+    getSelectedAlbums().length > 0 ||
+    document.getElementById("cfg-unfiled").checked ||
+    getSelectedSmartFolders().length > 0;
   const sharedSelected =
     sharedLibraryPseudoInput.checked ||
     sharedAlbumsSelected ||
     librarySelectorsIncludeShared(customLibraries);
-  const hasLibraryTemplate = folderTemplatesUseLibraryToken(...currentFolderTemplateValues());
-  sharedLibraryWarning.classList.toggle("hidden", !sharedSelected || hasLibraryTemplate);
+  return customLibraries.length > 0
+    ? customLibraries
+    : (sharedSelected ? (primaryContentSelected ? ["all"] : ["shared"]) : ["primary"]);
+}
+
+function scopeFolderTemplatesForSelectedLibraries() {
+  const libraries = selectedLibrariesForSettings();
+  if (!librarySelectorsIncludePrimary(libraries) || !librarySelectorsIncludeShared(libraries)) return;
+  const [folderStructure, albumFolderStructure, smartFolderStructure] = currentFolderTemplateValues();
+  setTemplateControlValue(
+    "cfg-folder-structure-select",
+    "cfg-folder-structure",
+    "cfg-folder-structure-custom-row",
+    libraryScopedTemplate(folderStructure),
+  );
+  setTemplateControlValue(
+    "cfg-album-folder-structure-select",
+    "cfg-album-folder-structure",
+    "cfg-album-folder-structure-custom-row",
+    libraryScopedTemplate(albumFolderStructure),
+  );
+  setTemplateControlValue(
+    "cfg-smart-folder-structure-select",
+    "cfg-smart-folder-structure",
+    "cfg-smart-folder-structure-custom-row",
+    libraryScopedTemplate(smartFolderStructure),
+  );
+}
+
+function unscopeFolderTemplates() {
+  const [folderStructure, albumFolderStructure, smartFolderStructure] = currentFolderTemplateValues();
+  setTemplateControlValue(
+    "cfg-folder-structure-select",
+    "cfg-folder-structure",
+    "cfg-folder-structure-custom-row",
+    libraryUnscopedTemplate(folderStructure),
+  );
+  setTemplateControlValue(
+    "cfg-album-folder-structure-select",
+    "cfg-album-folder-structure",
+    "cfg-album-folder-structure-custom-row",
+    libraryUnscopedTemplate(albumFolderStructure),
+  );
+  setTemplateControlValue(
+    "cfg-smart-folder-structure-select",
+    "cfg-smart-folder-structure",
+    "cfg-smart-folder-structure-custom-row",
+    libraryUnscopedTemplate(smartFolderStructure),
+  );
 }
 
 function updateAlbumSelectionRows(loadPickers = false) {
@@ -1706,7 +1822,14 @@ function updateAlbumSelectionRows(loadPickers = false) {
   sharedAlbumsRow.classList.toggle("hidden", albumsAll || sharedLibraryPhotos);
   if (loadPickers && !albumsAll) loadAlbumPicker(getSelectedAlbums());
   if (loadPickers && !albumsAll && !sharedLibraryPhotos) loadSharedAlbumPicker(getSelectedSharedAlbums());
-  updateSharedLibraryWarning();
+  scopeFolderTemplatesForSelectedLibraries();
+}
+
+function handleSharedLibraryPhotosChange() {
+  if (!sharedLibraryPseudoInput.checked) {
+    unscopeFolderTemplates();
+  }
+  updateAlbumSelectionRows(true);
 }
 
 function uniqueAlbumNames(...groups) {
@@ -1934,6 +2057,7 @@ async function loadSettings() {
     document.getElementById("cfg-unfiled").checked = unfiledSelected;
     loadSmartFolderPicker(cfg.filters?.smart_folders ?? []);
     document.getElementById("cfg-recent").value = cfg.filters?.recent ?? "";
+    document.getElementById("cfg-recent-scope").value = cfg.filters?.recent_scope === "per-filter" ? "per-filter" : "";
     document.getElementById("cfg-watch-interval").value = cfg.watch?.interval ?? "";
     document.getElementById("cfg-log-level").value = cfg.log_level ?? "";
     document.getElementById("cfg-max-download-attempts").value = cfg.download?.retry?.per_asset ?? "";
@@ -1942,7 +2066,7 @@ async function loadSettings() {
     document.getElementById("cfg-use-system-kei").checked = useSystem;
     document.getElementById("cfg-extra-args").value = appSettings.extra_args ?? "";
     document.getElementById("system-kei-warning").classList.toggle("hidden", !useSystem);
-    updateSharedLibraryWarning();
+    scopeFolderTemplatesForSelectedLibraries();
   } catch (err) {
     console.error("get_config error:", err);
   }
@@ -1974,29 +2098,25 @@ function parseAlbums(val) {
 
 document.getElementById("cfg-albums-all").addEventListener("change", () => updateAlbumSelectionRows(true));
 
-sharedLibraryPseudoInput.addEventListener("change", () => updateAlbumSelectionRows(true));
-sharedAlbumsList.addEventListener("change", updateSharedLibraryWarning);
-sharedAlbumsTextInput.addEventListener("input", updateSharedLibraryWarning);
-document.getElementById("cfg-libraries").addEventListener("input", updateSharedLibraryWarning);
+sharedLibraryPseudoInput.addEventListener("change", handleSharedLibraryPhotosChange);
+sharedAlbumsList.addEventListener("change", scopeFolderTemplatesForSelectedLibraries);
+sharedAlbumsTextInput.addEventListener("input", scopeFolderTemplatesForSelectedLibraries);
+document.getElementById("cfg-libraries").addEventListener("input", scopeFolderTemplatesForSelectedLibraries);
 
 document.getElementById("cfg-folder-structure-select").addEventListener("change", (e) => {
   document.getElementById("cfg-folder-structure-custom-row").classList.toggle("hidden", e.target.value !== "__custom__");
-  updateSharedLibraryWarning();
+  scopeFolderTemplatesForSelectedLibraries();
 });
 
 document.getElementById("cfg-album-folder-structure-select").addEventListener("change", (e) => {
   document.getElementById("cfg-album-folder-structure-custom-row").classList.toggle("hidden", e.target.value !== "__custom__");
-  updateSharedLibraryWarning();
+  scopeFolderTemplatesForSelectedLibraries();
 });
 
 document.getElementById("cfg-smart-folder-structure-select").addEventListener("change", (e) => {
   document.getElementById("cfg-smart-folder-structure-custom-row").classList.toggle("hidden", e.target.value !== "__custom__");
-  updateSharedLibraryWarning();
+  scopeFolderTemplatesForSelectedLibraries();
 });
-
-document.getElementById("cfg-folder-structure").addEventListener("input", updateSharedLibraryWarning);
-document.getElementById("cfg-album-folder-structure").addEventListener("input", updateSharedLibraryWarning);
-document.getElementById("cfg-smart-folder-structure").addEventListener("input", updateSharedLibraryWarning);
 
 document.getElementById("cfg-use-system-kei").addEventListener("change", (e) => {
   document.getElementById("system-kei-warning").classList.toggle("hidden", !e.target.checked);
@@ -2063,13 +2183,6 @@ function validateWizardStep() {
   return "";
 }
 
-function updateWizardSharedLibraryWarning() {
-  const warning = document.getElementById("wizard-shared-library-warning");
-  const shared = document.getElementById("wizard-shared-libraries").checked;
-  const folderStructure = document.getElementById("wizard-folder-structure").value;
-  warning.classList.toggle("hidden", !shared || folderStructure.includes("{library}"));
-}
-
 function showSetupWizard(cfg = {}) {
   document.getElementById("wizard-username").value = cfg.auth?.username ?? "";
   document.getElementById("wizard-domain").value = cfg.auth?.domain ?? "com";
@@ -2085,7 +2198,6 @@ function showSetupWizard(cfg = {}) {
   const albumFilters = cfg.filters?.albums ?? [];
   const hasSpecificAlbums = albumFilters.some((album) => !album.startsWith("!") && album.toLowerCase() !== "all");
   document.getElementById("wizard-all-albums").checked = !hasSpecificAlbums;
-  updateWizardSharedLibraryWarning();
   setWizardStep(0);
   setupWizardOverlay.classList.remove("hidden");
   setTimeout(() => document.getElementById("wizard-username").focus(), 100);
@@ -2113,6 +2225,16 @@ async function saveWizardSettings() {
   const photos = document.getElementById("wizard-photos").checked;
   const videos = document.getElementById("wizard-videos").checked;
   const primaryContentSelected = allAlbums || unfiled;
+  const scopeWizardFolders = sharedLibraries && primaryContentSelected;
+  const resolvedFolderStructure = scopeWizardFolders
+    ? libraryScopedTemplate(folderStructure)
+    : folderStructure;
+  const resolvedAlbumFolderStructure = scopeWizardFolders
+    ? libraryScopedTemplate("{album}")
+    : "{album}";
+  const resolvedSmartFolderStructure = scopeWizardFolders
+    ? libraryScopedTemplate("{smart-folder}")
+    : "{smart-folder}";
 
   const config = {
     log_level: null,
@@ -2123,9 +2245,9 @@ async function saveWizardSettings() {
     download: {
       directory,
       threads: null,
-      folder_structure: folderStructure || null,
-      folder_structure_albums: "{album}",
-      folder_structure_smart_folders: "{smart-folder}",
+      folder_structure: resolvedFolderStructure || null,
+      folder_structure_albums: resolvedAlbumFolderStructure,
+      folder_structure_smart_folders: resolvedSmartFolderStructure,
       retry: null,
     },
     metadata: null,
@@ -2139,6 +2261,7 @@ async function saveWizardSettings() {
       unfiled: (unfiled || sharedLibraries) ? null : false,
       media: mediaFilterFromSelection({ photos, videos }),
       recent: null,
+      recent_scope: null,
     },
     watch: { interval: null },
   };
@@ -2154,9 +2277,9 @@ async function saveWizardSettings() {
         use_system_kei: false,
         extra_args: "--friendly",
         all_albums: allAlbums,
-        folder_structure: folderStructure || null,
-        album_folder_structure: "{album}",
-        smart_folder_structure: "{smart-folder}",
+        folder_structure: resolvedFolderStructure || null,
+        album_folder_structure: resolvedAlbumFolderStructure,
+        smart_folder_structure: resolvedSmartFolderStructure,
       } }),
     ]);
     hideSetupWizard();
@@ -2189,8 +2312,6 @@ document.getElementById("wizard-directory-pick").addEventListener("click", async
   const dir = await openDialog({ directory: true, multiple: false, title: "Select Download Directory" });
   if (dir) document.getElementById("wizard-directory").value = dir;
 });
-document.getElementById("wizard-shared-libraries").addEventListener("change", updateWizardSharedLibraryWarning);
-document.getElementById("wizard-folder-structure").addEventListener("change", updateWizardSharedLibraryWarning);
 
 // ---------------------------------------------------------------------------
 // About Modal
@@ -2270,7 +2391,20 @@ async function saveSettings() {
       ? (primaryContentSelected ? ["all"] : ["shared"])
       : ["primary"]
   );
+  const scopeSettingsFolders =
+    librarySelectorsIncludePrimary(libraries) &&
+    librarySelectorsIncludeShared(libraries);
+  const resolvedFolderStructure = scopeSettingsFolders
+    ? libraryScopedTemplate(folderStructureBase)
+    : folderStructureBase;
+  const resolvedAlbumFolderStructure = scopeSettingsFolders
+    ? libraryScopedTemplate(albumFolderStructure)
+    : albumFolderStructure;
+  const resolvedSmartFolderStructure = scopeSettingsFolders
+    ? libraryScopedTemplate(smartFolderStructure)
+    : smartFolderStructure;
   const recent = parseInt(document.getElementById("cfg-recent").value, 10);
+  const recentScope = document.getElementById("cfg-recent-scope").value;
   const maxDownloadAttempts = parseInt(document.getElementById("cfg-max-download-attempts").value, 10);
   const watchInterval = parseInt(document.getElementById("cfg-watch-interval").value, 10);
   const logLevel = document.getElementById("cfg-log-level").value || null;
@@ -2286,9 +2420,9 @@ async function saveSettings() {
     download: {
       directory: directory || null,
       threads: isNaN(threads) ? null : threads,
-      folder_structure: folderStructureBase || null,
-      folder_structure_albums: albumFolderStructure || null,
-      folder_structure_smart_folders: smartFolderStructure || null,
+      folder_structure: resolvedFolderStructure || null,
+      folder_structure_albums: resolvedAlbumFolderStructure || null,
+      folder_structure_smart_folders: resolvedSmartFolderStructure || null,
       retry: isNaN(maxDownloadAttempts) || maxDownloadAttempts < 0 ? null : {
         per_asset: maxDownloadAttempts,
       },
@@ -2304,6 +2438,7 @@ async function saveSettings() {
       unfiled: (unfiled || sharedLibraryPhotos) ? null : false,
       media: mediaFilterFromSelection({ photos: !skipPhotos, videos: !skipVideos }),
       recent: isNaN(recent) || recent <= 0 ? null : recent,
+      recent_scope: recentScope === "per-filter" ? "per-filter" : null,
     },
     watch: {
       interval: isNaN(watchInterval) ? null : watchInterval,
@@ -2317,9 +2452,9 @@ async function saveSettings() {
         use_system_kei: useSystemKei,
         extra_args: extraArgs || null,
         all_albums: albumsAll,
-        folder_structure: folderStructureBase || null,
-        album_folder_structure: albumFolderStructure || null,
-        smart_folder_structure: smartFolderStructure || null,
+        folder_structure: resolvedFolderStructure || null,
+        album_folder_structure: resolvedAlbumFolderStructure || null,
+        smart_folder_structure: resolvedSmartFolderStructure || null,
       } }),
     ]);
     document.getElementById("settings-required-notice").classList.add("hidden");

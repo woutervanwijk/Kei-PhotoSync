@@ -73,6 +73,7 @@ pub struct FiltersConfig {
     pub unfiled: Option<bool>,
     pub media: Option<Vec<String>>,
     pub recent: Option<u32>,
+    pub recent_scope: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]

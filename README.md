@@ -4,6 +4,8 @@ Cloud Photo Downloader for macOS, Windows, and Linux.
 
 Download your iCloud Photos to your own computer. PhotoHarbor copies photos and videos from iCloud Photos to a local folder, with support for albums, iCloud Shared Photo Library albums, Apple smart folders, Live Photos, browsing downloaded files, and sync history. Based on the [kei](https://github.com/rhoopr/kei) sync engine.
 
+When a sync scope includes both the primary iCloud library and Shared Photo Libraries, PhotoHarbor automatically adds Kei's `{library}` path token to folder templates so the libraries stay separated on disk. Turning Shared Library Photos off removes that automatic prefix again.
+
 ## Supported platforms
 
 | Platform | Status |
@@ -35,7 +37,7 @@ xattr -cr "/Applications/PhotoHarbor.app"
 - On macOS: Xcode Command Line Tools (`xcode-select --install`)
 - On Linux: `libwebkit2gtk`, `libgtk-3`, `libayatana-appindicator3` (see [Tauri Linux dependencies](https://tauri.app/start/prerequisites/#linux))
 
-kei itself is downloaded automatically by `npm run prepare-sidecar` — no separate installation needed.
+kei itself is downloaded automatically by `npm run prepare-sidecar` — no separate installation needed. The bundled pin is currently Kei `v0.21.0`.
 
 ## Quick start
 
@@ -43,7 +45,7 @@ kei itself is downloaded automatically by `npm run prepare-sidecar` — no separ
 # Install JS dependencies
 npm install
 
-# Download the latest kei release from GitHub into src-tauri/binaries/
+# Download the pinned kei release from GitHub into src-tauri/binaries/
 npm run prepare-sidecar
 
 # Launch in development mode
@@ -52,7 +54,7 @@ npm run dev
 
 The first build takes a few minutes (Tauri compiles the WebView bindings). Subsequent runs are fast.
 
-`prepare-sidecar` is a no-op if the binary is already present and newer than the pin file. The downloaded version is pinned in `src-tauri/binaries/.kei-version` so cross-platform builds always use the same release.
+`prepare-sidecar` is a no-op if the binary is already present and newer than the pin file. The downloaded version is pinned in `src-tauri/binaries/.kei-version` so cross-platform builds always use the same release. The generated sidecar binaries are ignored and should be regenerated from the pin, not committed.
 
 To update the bundled kei to the latest release:
 
@@ -61,6 +63,12 @@ node scripts/prepare-sidecar.js --force
 git add src-tauri/binaries/.kei-version
 git commit -m "update kei sidecar to vX.Y.Z"
 ```
+
+## Kei 0.21 notes
+
+PhotoHarbor writes durable sync behavior to Kei's TOML config. With Kei 0.21, count-form recent filters use the new global library-wide recent window by default before album, smart-folder, unfiled, media, filename, and date filters narrow the set. In Settings, choose **Recent Scope → Per filter** to write `recent_scope = "per-filter"` when the old per-album/per-smart-folder recent behavior is wanted.
+
+Kei 0.21 also reports `full_enumeration_reason` in logs, reports, notifications, and metrics. PhotoHarbor streams the log field into the sync progress card as a friendly full-scan reason; it does not parse `sync_report.json`.
 
 ## Building for distribution
 

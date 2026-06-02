@@ -321,20 +321,6 @@
               <input type="checkbox" id="cfg-albums-all" />
               <span class="form-hint">Sync every user-created album. Apple smart folders (Favorites, Screenshots, etc.) are skipped unless named explicitly below.</span>
             </div>
-            <div class="form-row form-row--top">
-              <label for="cfg-shared-library-pseudo">Shared Library Photos</label>
-              <label class="album-check-row album-check-row--pseudo">
-                <input type="checkbox" id="cfg-shared-library-pseudo" value="__photoharbor_shared_libraries__" />
-                <span>
-                  <strong>Shared Library Photos</strong>
-                  <small>All photos and videos from iCloud Shared Photo Libraries</small>
-                </span>
-              </label>
-            </div>
-            <div id="cfg-shared-library-warning" class="notice notice--warn hidden">
-              <strong>Shared library folder warning.</strong>
-              Add <code>{library}</code> to a folder structure if you want primary and shared library files kept in separate folders.
-            </div>
             <div class="form-row form-row--top" id="cfg-albums-row">
               <label>Sync Albums <button type="button" class="btn-ghost btn-inline" id="cfg-albums-refresh" title="Refresh album list">↻</button></label>
               <div id="cfg-albums-list" class="albums-checklist hidden"></div>
@@ -360,6 +346,16 @@
               <div id="cfg-smart-folders-list" class="albums-checklist hidden"></div>
               <input type="text" id="cfg-smart-folders" placeholder="Favorites, Screenshots (comma-separated)" />
             </div>
+            <div class="form-row form-row--top">
+              <label for="cfg-shared-library-pseudo">Shared Library Photos</label>
+              <label class="album-check-row album-check-row--pseudo">
+                <input type="checkbox" id="cfg-shared-library-pseudo" value="__photoharbor_shared_libraries__" />
+                <span>
+                  <strong>Shared Library Photos</strong>
+                  <small>All photos and videos from iCloud Shared Photo Libraries</small>
+                </span>
+              </label>
+            </div>
           </div>
 
           <div class="settings-group">
@@ -375,6 +371,14 @@
             <div class="form-row">
               <label for="cfg-recent">Only Most Recent N</label>
               <input type="number" id="cfg-recent" min="0" placeholder="0 = all" style="width:100px" />
+            </div>
+            <div class="form-row">
+              <label for="cfg-recent-scope">Recent Scope</label>
+              <select id="cfg-recent-scope">
+                <option value="" selected>Global</option>
+                <option value="per-filter">Per filter</option>
+              </select>
+              <span class="form-hint">Global uses Kei 0.21's library-wide recent window before filters. Per filter applies the count separately to each album, smart folder, or unfiled pass.</span>
             </div>
           </div>
 
@@ -548,7 +552,6 @@
           <input type="checkbox" id="wizard-shared-libraries" />
           <span>Include Shared Library Photos</span>
         </label>
-        <p id="wizard-shared-library-warning" class="wizard-hint wizard-hint--warn hidden">Shared Library Photos may share folders with primary photos. You can add <code>{library}</code> to folder structures later in Settings.</p>
         <label class="wizard-check">
           <input type="checkbox" id="wizard-unfiled" checked />
           <span>Include photos that are not in an album</span>
