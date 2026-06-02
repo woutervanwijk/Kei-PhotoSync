@@ -317,9 +317,14 @@
           <div class="settings-group">
             <h2 class="settings-group-title">Albums</h2>
             <div class="form-row">
-              <label for="cfg-albums-all">All Albums</label>
+              <label for="cfg-unfiled">Sync All Unfiled Photos</label>
+              <input type="checkbox" id="cfg-unfiled" checked />
+              <span class="form-hint">Sync every photo that is not in a user-created album</span>
+            </div>
+            <div class="form-row">
+              <label for="cfg-albums-all">Sync All Albums</label>
               <input type="checkbox" id="cfg-albums-all" />
-              <span class="form-hint">Sync every user-created album. Apple smart folders (Favorites, Screenshots, etc.) are skipped unless named explicitly below.</span>
+              <span class="form-hint">Sync every user-created album. Apple smart folders (Favorites, Screenshots, etc.) are skipped unless named explicitly below</span>
             </div>
             <div class="form-row form-row--top" id="cfg-albums-row">
               <label>Sync Albums <button type="button" class="btn-ghost btn-inline" id="cfg-albums-refresh" title="Refresh album list">↻</button></label>
@@ -336,10 +341,6 @@
               <label>Exclude Albums <button type="button" class="btn-ghost btn-inline" id="cfg-exclude-albums-refresh" title="Refresh album list">↻</button></label>
               <div id="cfg-exclude-albums-list" class="albums-checklist hidden"></div>
               <input type="text" id="cfg-exclude-albums" placeholder="Screenshots, Hidden (comma-separated)" />
-            </div>
-            <div class="form-row">
-              <label for="cfg-unfiled">Include Unfiled Photos</label>
-              <input type="checkbox" id="cfg-unfiled" checked />
             </div>
             <div class="form-row form-row--top">
               <label>Smart Folders <button type="button" class="btn-ghost btn-inline" id="cfg-smart-folders-refresh" title="Refresh smart folder list">↻</button></label>
